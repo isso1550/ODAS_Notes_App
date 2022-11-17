@@ -1,0 +1,67 @@
+h1 {
+    background-color: rgb(62,62,66);
+    text-align: center;
+}
+.submit-btn{
+    border:none;
+    background-color: rgb(210, 35, 16);
+    transition: all 0.8s;
+}
+.submit-btn:hover{
+    background-color: rgb(238,211,69);
+}
+form input{
+    display:block;
+    margin:2vh;
+    height:5vh;
+    width:15vw;
+}
+form label{
+    margin:2vh;
+}
+form{
+    margin-left: auto;
+    margin-right: auto;
+    width:15vw;
+}
+
+a.big-link {
+    -webkit-appearance: button;
+    -moz-appearance: button;
+    appearance: button;
+    text-decoration: none;
+    color: initial;
+}
+.big-link {
+    display:block;
+    width:40vh;
+    height:10vh;
+    font-size: 8vh;
+    background-color: rgb(210, 35, 16);
+	border:none;
+    transition: 1s all;
+    margin:2vh;
+}
+.big-link span:after {
+    content: '\00bb';
+    position: relative;
+    opacity: 0;
+    top: 0;
+    right: -20px;
+    transition: opacity 0.5s, right 0.5s;
+  }
+.big-link span{
+    padding-left: 3vw;
+    transition: all 0.5s;
+}
+.big-link:hover span {
+    padding-left: 0;
+}
+.big-link:hover span:after {
+    opacity: 1;
+    right: -10px;
+  }
+.big-link:hover {
+    background-color: rgb(238,211,69);
+    border-radius: 5px;
+}

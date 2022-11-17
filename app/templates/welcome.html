@@ -1,0 +1,14 @@
+<html>
+<head>
+    <link rel="stylesheet" href={{ url_for('static', filename='css/main.css') }}>
+    <link rel="stylesheet" href={{ url_for('static', filename='css/theme.css') }}>
+    <title> Home </title>
+</head>
+<body>
+<h1>Welcome to the note app!</h1>
+<a class="big-link" href = {{ url_for('register') }}> <span> Register </span> </a>
+<a class="big-link" href = {{ url_for('login') }}> <span> Login </span> </a>
+<a class="big-link" href = {{ url_for('browse') }}> <span> Browse </span> </a>
+</body>
+
+</html>

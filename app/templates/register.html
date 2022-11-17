@@ -1,0 +1,28 @@
+<html>
+<head>
+    <link rel="stylesheet" href={{ url_for('static', filename='css/main.css') }}>
+    <link rel="stylesheet" href={{ url_for('static', filename='css/theme.css') }}>
+    <title> Register </title>
+</head>
+<body>
+<h1>Welcome to the note app!</h1>
+
+<form name="register-data" action={{ url_for('register') }} method="post">
+  <label for="username">Username</label>
+  <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="off" required></textarea>
+
+  <label for="email">Email</label>
+  <input type="text" id="email" name="email" placeholder="Enter email" autocomplete="off" required></textarea>
+
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="off" required ></textarea>
+
+  <label for="confirm-password">Confirm password</label>
+  <input type="password" id="confirm-password" name="confirm-password" placeholder="Reenter password" autocomplete="off" required ></textarea>
+
+  <input type="submit" class="submit-btn" value="Register">
+</form>
+
+</body>
+
+</html>
