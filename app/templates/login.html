@@ -1,12 +1,12 @@
-<html>
-<head>
-    <link rel="stylesheet" href={{ url_for('static', filename='css/main.css') }}>
-    <link rel="stylesheet" href={{ url_for('static', filename='css/theme.css') }}>
-    <title> Login </title>
-</head>
-<body>
-<h1>Welcome to the note app!</h1>
+{% extends "_layout.html" %}
 
+{% block title %} Welcome {% endblock %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block content %}
 <form name="login-data" action={{ url_for('login') }} method="post">
   <label for="username">Username</label>
   <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="off" required></textarea>
@@ -14,7 +14,4 @@
   <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="off" required ></textarea>
   <input type="submit" class="submit-btn" value="Login">
 </form>
-
-</body>
-
-</html>
+{% endblock %}
