@@ -1,0 +1,21 @@
+{% extends "_layout.html" %}
+
+{% block title %} Browse notes {% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href={{ url_for('static', filename='css/browse.css') }}>
+{% endblock %}
+
+{% block content %}
+<ul class="public-list">
+{% for note in public_notes %}
+    <li>
+        <a href={{ url_for('renderNote', id=note[0]) }}>
+            <span class="title"> {{note[1]}}</span>
+            <span class="author"> by {{note[2]}}</span>
+        </a>
+    </li>
+{% endfor %}
+</ul>
+{% endblock %}

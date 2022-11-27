@@ -1,0 +1,32 @@
+.public-list{
+    list-style-type: none;
+}
+.public-list a{
+    display:block;
+    color:white;
+    background-color: rgb(210, 35, 16);
+    height:10vh;
+    text-decoration: none;
+    transition: 1s all;
+}
+.public-list a:hover{
+    background-color: blueviolet;
+}
+.public-list li{
+    border: 1px solid black;
+}
+.title{
+    overflow: hidden;
+    font-size: 25px;
+    display:block;
+    width:100%;
+    height:60%;
+    text-align: center;
+    float:left;
+}
+.author{
+    height:40%;
+    overflow: hidden;
+    display:block;
+    float:right;
+}

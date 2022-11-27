@@ -97,6 +97,12 @@ def renderNote(id):
 
 @app.route("/browse")
 def browse():
+    db = sqlite3.connect(DB_FILE)
+    sql = db.cursor()
+    public_notes = sql.execute("SELECT id, title, username FROM notes WHERE privacy = 'public'").fetchall()
+    print(public_notes)
+    print(public_notes[0][0])
+    return render_template("browse.html", public_notes=public_notes)
     return "Not implemented yet"
 
 
