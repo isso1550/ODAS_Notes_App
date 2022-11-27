@@ -1,11 +1,12 @@
 from time import sleep
 from passlib.hash import sha256_crypt
+import bleach
 
 #wielokrotne hashowanie - ile razy hashować?
 MULTIHASH_COUNT = 3
 #hashowanie - ile czasu odczekać[s]
 HASH_DELAY = 0.5
-
+CLEAN_TAGS = ["h1","h2","h3","abbr", "acronym", "b", "blockquote", "br", "code", "div", "em", "i", "li", "ol", "p", "span", "strong", "table", "td", "tr", "ul"]
 
 #   Przetwarzanie hasła na hash
 #   Użyta funkcja jednokierunkowa: sha256 z pakietu passlib.hash
@@ -30,6 +31,8 @@ def loginHash(password, db_hash):
     sleep(HASH_DELAY)
     return hash
 
+def cleanText(text):
+    return bleach.clean(text, tags=CLEAN_TAGS)
 
 if __name__ == "__main__":
     print("###TEST MODE###")

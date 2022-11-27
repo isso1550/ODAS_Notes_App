@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<form name="register-data" action={{ url_for('register') }} method="post">
+<form class="user-data" name="register-data" action={{ url_for('register') }} method="post">
   <label for="username">Username</label>
   <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="off" required></textarea>
 

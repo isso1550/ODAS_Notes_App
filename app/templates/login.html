@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<form name="login-data" action={{ url_for('login') }} method="post">
+<form class = "user-data" name="login-data" action={{ url_for('login') }} method="post">
   <label for="username">Username</label>
   <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="off" required></textarea>
   <label for="password">Password</label>

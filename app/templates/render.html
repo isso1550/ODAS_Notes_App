@@ -1,0 +1,11 @@
+{% extends "_layout.html" %}
+
+{% block title %} Your note {% endblock %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block content %}
+{{ note | safe }}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "_layout.html" %}
+
+{% block title %} Welcome {% endblock %}
+
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href={{ url_for('static', filename='css/createNote.css') }}>
+{% endblock %}
+
+{% block content %}
+<form class="note-form" name="new-note" action={{ url_for('createNote') }} method="post">
+  <label for="title">Title</label>
+    <input type="text" id="title" name="title" placeholder="Enter title" autocomplete="off"></textarea>
+  <label for="privacy">Privacy setting</label>
+    <select name="privacy" id="privacy">
+        <option value="private">Private</option>
+        <option value="unlisted">Unlisted</option>
+        <option value="public">Public</option>
+    </select>
+  <label for="note">Note</label>
+    <textarea name ="note" id="note" placeholder="Write your note here!" autocomplete="off" rows="20" cols="60" required></textarea>
+  <input type="submit" class="submit-btn" value="Save">
+</form>
+{% endblock %}
