@@ -12,7 +12,8 @@
 {% for note in public_notes %}
     <li>
         <a href={{ url_for('renderNote', id=note[0]) }}>
-            <span class="title"> {{note[1]}}</span>
+            <!-- title i author automatycznie czyszczone przez jinja2 -->
+            <span class="title"> {{note[1]}} </span>
             <span class="author"> by {{note[2]}}</span>
         </a>
     </li>
