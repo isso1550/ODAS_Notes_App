@@ -1,9 +1,12 @@
-from flask import Flask, render_template, request, make_response, redirect
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, make_response, redirect, flash
 import sqlite3
 import tools
 import markdown
 
 DB_FILE = "./notesapp.db"
+MAX_LOGIN_ATTEMPTS = 5
+ACCOUNT_SUSPENSION_TIME = timedelta(minutes=15)
 
 app = Flask(__name__)
 
@@ -18,21 +21,27 @@ def register():
     return render_template("register.html")
 @app.route("/register", methods = ['POST'])
 def registerUser():
+    #!!!!!!!!!!!!!!!!!!!!!!!! TODO weryfikacja danych od uzytkownika!!!!!!!!!!!!!!!!!!!!!!!!1
+    email = request.form.get("email")
     username = request.form.get("username")
     password = request.form.get("password")
     confirmation = request.form.get("confirm-password")
 
     if password != confirmation:
         return "Passwords do not match!", 409
-    #!!!!!!!!!!!!!!!!!!!!!!!!TODO co jesli user w bazie?!!!!!!!!!!!!!!!!!!!!!
     #!!!!!!!!!!!!!!!!!!!!!!!!TODO entropia hasła!!!!!!!!!!!!!!!!!!!
     #!!!!!!!!!!!!!!!!!!!!!!!!TODO sprawdzanie czy uzytkownik probowal sql injection!!!!!!!!!!!!!!!!!!!!!
     hash = tools.registerHash(password)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
-    sql.execute("INSERT INTO users (username, password) VALUES (:username, :password)", {"username":username, "password": hash})
-    db.commit()
-    return "Not implemented yet"
+    db_user = sql.execute("SELECT * FROM users WHERE username=:username", {"username":username}).fetchone()
+    if(db_user == None):
+        sql.execute("INSERT INTO users (email, username, password) VALUES (:email, :username, :password)", {"email":email, "username":username, "password": hash})
+        db.commit()
+        print("Registered user " + username)
+        return "Registration successful"
+    #Można o tym poinformować, bo zakładamy że znajomość nazwy użytkownika nie da atakującemu dostępu do konta
+    return "Username already in use"
 
 @app.route("/login")
 def login():
@@ -43,12 +52,28 @@ def loginUser():
     password = request.form.get("password")
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
+    login_attempts = sql.execute("SELECT * FROM login_attempts WHERE username = :username", {"username":username}).fetchall()
+    if(login_attempts != None):
+        #Usuwanie przestarzałych prób logowania
+        yesterday = (datetime.utcnow() - ACCOUNT_SUSPENSION_TIME).strftime("%Y-%m-%d %H:%M:%S")
+        sql.execute("DELETE FROM login_attempts WHERE username = :username AND date < (:yesterday)", {"username":username, "yesterday":yesterday})
+        db.commit()
+        login_attempts = sql.execute("SELECT * FROM login_attempts WHERE username = :username", {"username":username}).fetchall()
+        if(login_attempts != None):
+            if (len(login_attempts)==MAX_LOGIN_ATTEMPTS):
+                return "Account temporarily blocked for too many failed logins"
+                #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO wyslij link do zmiany hasla !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     db_hash = sql.execute("SELECT username, password FROM users WHERE username = :username", {"username":username}).fetchone()[1]
     hash = tools.loginHash(password, db_hash)
     if (hash == db_hash):
-        #LOGIN
+        #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
+        sql.execute("DELETE FROM login_attempts WHERE username = :username", {"username":username})
+        db.commit()
         return "Logged in as " + username
-    return "Not implemented yet"
+    #Nieudane logowanie - zapisanie próby i zwrócenie błędu
+    sql.execute("INSERT INTO login_attempts (ip, username, date) VALUES (:ip, :username, CURRENT_TIMESTAMP)", {"ip":request.remote_addr, "username":username})
+    db.commit()
+    return "Incorrect username or password", 401
 
 @app.route("/create")
 def createNote():
@@ -113,11 +138,12 @@ if __name__ == "__main__":
         db = sqlite3.connect(DB_FILE)
         sql = db.cursor()
         sql.execute("DROP TABLE IF EXISTS users;")
-        sql.execute("CREATE TABLE users (username varchar(100), password varchar(128));")
+        sql.execute("CREATE TABLE users (email varchar(100), username varchar(100), password varchar(128));")
         sql.execute("DELETE FROM users;")
-        #sql.execute("INSERT INTO users (username, password) VALUES ('bach', '$5$rounds=535000$ZJ4umOqZwQkWULPh$LwyaABcGgVyOvJwualNZ5/qM4XcxxPpkm9TKh4Zm4w4');")
-        #sql.execute("INSERT INTO users (username, password) VALUES ('john', '$5$rounds=535000$AO6WA6YC49CefLFE$dsxygCJDnLn5QNH/V8OBr1/aEjj22ls5zel8gUh4fw9');")
-        #sql.execute("INSERT INTO users (username, password) VALUES ('bob', '$5$rounds=535000$.ROSR8G85oGIbzaj$u653w8l1TjlIj4nQkkt3sMYRF7NAhUJ/ZMTdSPyH737');")
+
+        sql.execute("DROP TABLE IF EXISTS login_attempts;")
+        sql.execute("CREATE TABLE login_attempts (ip varchar(12), username varchar(100), date datetime)")
+        sql.execute("DELETE FROM login_attempts")
 
         sql.execute("DROP TABLE IF EXISTS notes;")
         sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256));")
