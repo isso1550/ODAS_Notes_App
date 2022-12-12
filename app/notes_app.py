@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, make_response, redirect, flas
 import sqlite3
 import tools
 import markdown
+import notecrypt
 
 DB_FILE = "./notesapp.db"
 MAX_LOGIN_ATTEMPTS = 5
@@ -91,11 +92,11 @@ def saveNewNote():
         #!!!!!!!!!!!!!!!!!!!!!!!!!TODO log suspicious action!!!!!!!!!!!!!!!!!!!!!!!!!!
         return "Suspicious action logged"
     if(privacy == "private"):
-        #!!!!!!!!!!!!!!!!!!!!!!!!!TODO crypt note!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        title = notecrypt.encrypt_note(title)
+        note = notecrypt.encrypt_note(note)
         print("Remember to crypt!")
     if(title == ""):
         title = "Untitled"
-    print(title, privacy, note)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     #!!!!!!!!!!!!!!!!!!!TODO sprawdzenie czy uzytkownik probowal sqlnjection!!!!!!!!!!!!!!!!!!!!
@@ -111,6 +112,8 @@ def renderNote(id):
     title, privacy, note = sql.execute("SELECT title, privacy, note FROM notes WHERE id = :id", {"id":id}).fetchone()
     if (privacy == "private"):
         #!!!!!!!!!!!!!!!!!!!!!!!!!TODO verify user login!!!!!!!!!!!!!!!!!!!!!
+        title = notecrypt.decrypt_note(title)
+        note = notecrypt.decrypt_note(note)
         1==1
     note = markdown.markdown(note)
     #tekst wybielony przed wyswietleniem
@@ -128,7 +131,6 @@ def browse():
     print(public_notes)
     print(public_notes[0][0])
     return render_template("browse.html", public_notes=public_notes)
-    return "Not implemented yet"
 
 
 if __name__ == "__main__":
