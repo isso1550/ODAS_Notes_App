@@ -41,7 +41,6 @@ def registerUser():
         db.commit()
         print("Registered user " + username)
         return "Registration successful"
-    #Można o tym poinformować, bo zakładamy że znajomość nazwy użytkownika nie da atakującemu dostępu do konta
     return "Username already in use"
 
 @app.route("/login")
@@ -49,32 +48,32 @@ def login():
     return render_template("login.html")
 @app.route("/login", methods = ['POST'])
 def loginUser():
-    username = request.form.get("username")
+    email = request.form.get("email")
     password = request.form.get("password")
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
-    login_attempts = sql.execute("SELECT * FROM login_attempts WHERE username = :username", {"username":username}).fetchall()
+    login_attempts = sql.execute("SELECT * FROM login_attempts WHERE email = :email", {"email":email}).fetchall()
     if(login_attempts != None):
         #Usuwanie przestarzałych prób logowania
         yesterday = (datetime.utcnow() - ACCOUNT_SUSPENSION_TIME).strftime("%Y-%m-%d %H:%M:%S")
-        sql.execute("DELETE FROM login_attempts WHERE username = :username AND date < (:yesterday)", {"username":username, "yesterday":yesterday})
+        sql.execute("DELETE FROM login_attempts WHERE email = :email AND date < (:yesterday)", {"email":email, "yesterday":yesterday})
         db.commit()
-        login_attempts = sql.execute("SELECT * FROM login_attempts WHERE username = :username", {"username":username}).fetchall()
+        login_attempts = sql.execute("SELECT * FROM login_attempts WHERE email = :email", {"email":email}).fetchall()
         if(login_attempts != None):
             if (len(login_attempts)==MAX_LOGIN_ATTEMPTS):
                 return "Account temporarily blocked for too many failed logins"
                 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO wyslij link do zmiany hasla !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    db_hash = sql.execute("SELECT username, password FROM users WHERE username = :username", {"username":username}).fetchone()[1]
+    db_hash = sql.execute("SELECT email, password FROM users WHERE email = :email", {"email":email}).fetchone()[1]
     hash = tools.loginHash(password, db_hash)
     if (hash == db_hash):
         #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
-        sql.execute("DELETE FROM login_attempts WHERE username = :username", {"username":username})
+        sql.execute("DELETE FROM login_attempts WHERE email = :email", {"email":email})
         db.commit()
-        return "Logged in as " + username
+        return "Logged in as " + email
     #Nieudane logowanie - zapisanie próby i zwrócenie błędu
-    sql.execute("INSERT INTO login_attempts (ip, username, date) VALUES (:ip, :username, CURRENT_TIMESTAMP)", {"ip":request.remote_addr, "username":username})
+    sql.execute("INSERT INTO login_attempts (ip, email, date) VALUES (:ip, :email, CURRENT_TIMESTAMP)", {"ip":request.remote_addr, "email":email})
     db.commit()
-    return "Incorrect username or password", 401
+    return "Incorrect email or password", 401
 
 @app.route("/create")
 def createNote():
@@ -134,7 +133,7 @@ def browse():
 
 
 if __name__ == "__main__":
-    INIT_DB = False
+    INIT_DB = True
     if (INIT_DB):
         print("[*] Init database!")
         db = sqlite3.connect(DB_FILE)
@@ -144,7 +143,7 @@ if __name__ == "__main__":
         sql.execute("DELETE FROM users;")
 
         sql.execute("DROP TABLE IF EXISTS login_attempts;")
-        sql.execute("CREATE TABLE login_attempts (ip varchar(12), username varchar(100), date datetime)")
+        sql.execute("CREATE TABLE login_attempts (ip varchar(12), email varchar(100), date datetime)")
         sql.execute("DELETE FROM login_attempts")
 
         sql.execute("DROP TABLE IF EXISTS notes;")
