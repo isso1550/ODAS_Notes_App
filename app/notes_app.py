@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, make_response, redirect, flash
+from flask import Flask, render_template, request, redirect
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 import sqlite3
 import tools
 import markdown
@@ -9,13 +10,41 @@ DB_FILE = "./notesapp.db"
 MAX_LOGIN_ATTEMPTS = 5
 ACCOUNT_SUSPENSION_TIME = timedelta(minutes=15)
 
+login_manager = LoginManager()
 app = Flask(__name__)
+app.secret_key = "abdabdabababab"
+login_manager.init_app(app)
+
+class User :
+    is_authenticated = True
+    is_active = True
+    is_anonymous = False
+    def get_id(self):
+        return self.username
+
+@login_manager.user_loader
+def user_loader(email):
+    db = sqlite3.connect(DB_FILE)
+    sql = db.cursor()
+    sql.execute("SELECT username FROM users WHERE email = :email", {"email":email})
+    try:
+        username = sql.fetchone()[0]
+    except:
+        return None
+    user = User()
+    user.username = username
+    user.email = email
+    return user
 
 
 @app.route("/")
 def welcome():
     print(request.headers.get('Host'))
     return render_template("welcome.html")
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect("/")
 
 @app.route("/register")
 def register():
@@ -63,24 +92,36 @@ def loginUser():
             if (len(login_attempts)==MAX_LOGIN_ATTEMPTS):
                 return "Account temporarily blocked for too many failed logins"
                 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO wyslij link do zmiany hasla !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    db_hash = sql.execute("SELECT email, password FROM users WHERE email = :email", {"email":email}).fetchone()[1]
-    hash = tools.loginHash(password, db_hash)
-    if (hash == db_hash):
-        #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
-        sql.execute("DELETE FROM login_attempts WHERE email = :email", {"email":email})
-        db.commit()
-        return "Logged in as " + email
+
+    db_hash = sql.execute("SELECT password FROM users WHERE email = :email", {"email":email}).fetchone()
+    print(db_hash)
+    if (db_hash != None):
+        db_hash = db_hash[0]
+        hash = tools.loginHash(password, db_hash)
+        if (hash == db_hash):
+            #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
+            sql.execute("DELETE FROM login_attempts WHERE email = :email", {"email":email})
+            db.commit()
+            user = user_loader(email)
+            login_user(user)
+        
+            return "Logged in as " + email
     #Nieudane logowanie - zapisanie próby i zwrócenie błędu
     sql.execute("INSERT INTO login_attempts (ip, email, date) VALUES (:ip, :email, CURRENT_TIMESTAMP)", {"ip":request.remote_addr, "email":email})
     db.commit()
     return "Incorrect email or password", 401
 
 @app.route("/create")
+@login_required
 def createNote():
     return render_template("createNote.html")
+
+
 @app.route("/create", methods = ['POST'])
+@login_required
 def saveNewNote():
-    username = "bob"
+    username = current_user.username
+    print(username)
     #!!!!!!!!!!!!!!!!!!!!!!!!TODO GET USERNAME!!!!!!!!!!!!!!!!!!!!!!
     title = request.form.get("title")
     privacy = request.form.get("privacy")
@@ -108,9 +149,16 @@ def saveNewNote():
 def renderNote(id):
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
-    title, privacy, note = sql.execute("SELECT title, privacy, note FROM notes WHERE id = :id", {"id":id}).fetchone()
+    try:
+        author, title, privacy, note = sql.execute("SELECT username, title, privacy, note FROM notes WHERE id = :id", {"id":id}).fetchone()
+    except:
+        return redirect("/")
     if (privacy == "private"):
-        #!!!!!!!!!!!!!!!!!!!!!!!!!TODO verify user login!!!!!!!!!!!!!!!!!!!!!
+        if not (current_user.is_authenticated):
+            return "Login to browse private notes!"
+        username = current_user.username
+        if (username != author):
+            return "You are not the author!"
         title = notecrypt.decrypt_note(title)
         note = notecrypt.decrypt_note(note)
         1==1
@@ -128,6 +176,15 @@ def browse():
     sql = db.cursor()
     public_notes = sql.execute("SELECT id, title, username FROM notes WHERE privacy = 'public'").fetchall()
     return render_template("browse.html", public_notes=public_notes)
+
+@app.route("/mynotes")
+@login_required
+def mynotes():
+    username = current_user.username
+    db = sqlite3.connect(DB_FILE)
+    sql = db.cursor()
+    private_notes = sql.execute("SELECT id, title, username FROM notes WHERE username = :username", {"username":username}).fetchall()
+    return render_template("browse.html",  public_notes=private_notes)
 
 
 if __name__ == "__main__":

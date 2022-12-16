@@ -4,19 +4,26 @@
     padding: 0;
     overflow: hidden;
     background-color: #333;
+    position:relative;
   }
   
-#main-layout  li {
+#main-layout  li,p {
     float: left;
   }
-  
-#main-layout li a {
+#main-layout li a{
+    padding: 14px 16px;
+}
+#main-layout li a,p {
     display: block;
     color: white;
     text-align: center;
-    padding: 14px 16px;
     text-decoration: none;
   }
 #main-layout li a:hover {
     background-color: #111;
   }
+#nav-username{
+  padding:0;
+  position:absolute;
+  right:0;
+}
