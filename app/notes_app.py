@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 import os
+import io
 import glob
 import requests
 import filetype
@@ -165,19 +166,26 @@ def saveNewNote():
     recent_id = sql.lastrowid
 
     #pic
+    if (picture_url == ""):
+        pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(recent_id) + ".*")
+        if (len(pics) > 0):
+            print("UWAGA Narażono użytkownika na wyciek danych, ale serwer temu zapobiegł. Następnym razem usunąć zdjęcia nieistniejących notatek.")
+            for p in pics:
+                os.remove(p)
+        return redirect("/render/" + str(recent_id))
     #!!!!!!!!!!!!!!!!!!!!!!!TODO upewnic sie testami ze jest ok !!!!!!!!!!!!!!!!!!!!!!!!
     try:
         response = requests.get(picture_url)
         if (len(response.content) > FILE_MAX_SIZE):
             return redirect("/render/" + str(recent_id))
 
-        temp_filepath = TEMP_SAVE_FOLDER + str(recent_id) + ".png"
+        temp_filepath = TEMP_SAVE_FOLDER + "/" + str(recent_id) + ".png"
         open(temp_filepath, "wb").write(response.content)
         kind = filetype.guess(temp_filepath)
+        os.remove(temp_filepath)
         if kind is None:
             #_________________________________________________________LOG SUSPICIOUS
             return "File invalid", 400
-        os.remove(temp_filepath)
         if kind.extension in FILE_ALLOWED_EXTENSIONS:
             #Usuwa stare (zeby nie bylo wielu zdjec z roznymi rozszerzeniami dla jednego uzytkownika)
             pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(recent_id) + ".*")
@@ -185,7 +193,10 @@ def saveNewNote():
                 os.remove(pic)
             filename = "/"+ str(recent_id) + "." + str(kind.extension)
             filepath = os.path.join(NOTEPIC_SAVE_FOLDER + filename)
-            open(filepath, 'wb').write(response.content)
+            if (privacy == "private"):
+                open(filepath,'wb').write(notecrypt.encrypt_note((response.content)))
+            else :
+                open(filepath, 'wb').write(response.content)
             
         else:
             return "Unallowed filetype", 400
@@ -211,7 +222,7 @@ def renderNote(id):
         if (username != author):
             return "You are not the author!"
         title = notecrypt.decrypt_note(title)
-        note = notecrypt.decrypt_note(note)
+        note = notecrypt.decrypt_note(note).decode()
         1==1
     note = markdown.markdown(note)
     #tekst wybielony przed wyswietleniem
@@ -295,7 +306,7 @@ def updateAvatar():
     sql = db.cursor()
     try:
         id = sql.execute("SELECT id FROM users WHERE username=:username", {"username": current_user.id}).fetchone()[0]
-        temp_filepath = os.path.join(TEMP_SAVE_FOLDER  + str(id)+".png")
+        temp_filepath = os.path.join(TEMP_SAVE_FOLDER  + "/" + str(id)+".png")
         file.save(temp_filepath)
         kind = filetype.guess(temp_filepath)
         if kind is None:
@@ -350,11 +361,19 @@ def getNotePicture(id):
         
     pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(id) + ".*")
     if len(pics) > 0:
+        if (privacy == "private"):
+            f = open(pics[0], "rb")
+            pic = f.read()
+            f.close()
+            pic = notecrypt.decrypt_note(pic)
+            ext = pics[0].split(".")[-1]
+            print(pic)
+            return send_file(io.BytesIO(pic), mimetype="image/"+ext)
         return send_file(pics[0])
     return send_file(NOTEPIC_SAVE_FOLDER + "/default.png")
 
 if __name__ == "__main__":
-    INIT_DB = False
+    INIT_DB = True
     INIT_USER_FILES = False
     if (INIT_DB):
         print("[*] Init database!")
@@ -363,6 +382,7 @@ if __name__ == "__main__":
         sql.execute("DROP TABLE IF EXISTS users;")
         sql.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email varchar(100), username varchar(100), password varchar(128));")
         sql.execute("DELETE FROM users;")
+        sql.execute("INSERT INTO users (id, email, username, password) VALUES (1, 'bob@bob.com', 'bob', '$5$rounds=535000$YPsByhiXdwXli43D$pa5pvxcsyGpxMD3uhy32dBrYAw5xyjbaPsT/LS98UL0');")
 
         sql.execute("DROP TABLE IF EXISTS login_attempts;")
         sql.execute("CREATE TABLE login_attempts (ip varchar(12), email varchar(100), date datetime)")

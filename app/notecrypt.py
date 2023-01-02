@@ -13,7 +13,10 @@ def unpad(text, block_size=16):
     return text[:-block_size+1+(len(text[-block_size+1:].replace(b"\x00",b"")))]
 
 def encrypt_note(note_text):
-    note_padded = pad(note_text.encode())
+    if(type(note_text) is str):
+        note_padded = pad(note_text.encode())
+    else:
+        note_padded = pad(note_text)
     aes = AES.new(KEY, AES.MODE_CBC, IV)
     encrypted_note = aes.encrypt(note_padded)
     return encrypted_note
@@ -21,7 +24,7 @@ def encrypt_note(note_text):
 def decrypt_note(encrypted_note):
     aes = AES.new(KEY, AES.MODE_CBC, IV)
     note_padded = aes.decrypt(encrypted_note)
-    return unpad(note_padded).decode()
+    return unpad(note_padded)
 
 
 if __name__ == "__main__":
