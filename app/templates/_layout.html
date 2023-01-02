@@ -22,7 +22,7 @@
                 <li> <a href={{ url_for('createNote') }}> Create note </a></li>
                 <li> <a href={{ url_for('mynotes') }}> My notes </a></li>
                 {% if current_user.is_authenticated %}
-                    <li id="nav-username"> <p> Logged in as {{ current_user.id }} </p></li>
+                    <li id="nav-username"> <a style="text-decoration:none" href="/me"> Logged in as {{ current_user.id }} </a></li>
                 {% endif %}
             </ul>
             <!--<h1 class="layout">Welcome to the note app!</h1>-->

@@ -4,3 +4,4 @@ markdown
 flask
 flask_login
 pyjwt
+filetype

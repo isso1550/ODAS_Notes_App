@@ -7,5 +7,7 @@
 {% endblock %}
 
 {% block content %}
+<img width="256" src="{{ url_for('getNotePicture', id = request.url.split('/')[-1])}}">
+<br>
 {{ note | safe }}
 {% endblock %}

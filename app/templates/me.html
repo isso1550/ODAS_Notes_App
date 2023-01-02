@@ -1,0 +1,21 @@
+{% extends "_layout.html" %}
+
+{% block title %} Your note {% endblock %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block content %}
+<div style="text-align:center">
+    <h1 style="text-align:center"> Hello {{ current_user.id }}</h1>
+    <img width="256" src="{{ url_for('getAvatar')}}">
+    <br>
+    <a style="text-align:center" href="/resetPassword"> Change your password </a>
+</div>
+<form enctype="multipart/form-data" class="user-data" name="avatar-update" action="/updateAvatar" method="post">
+    <label for="file">Pick photo</label>
+    <input type="file" id="file" name="file" required>
+    <input type="submit" class="submit-btn" value="Update">
+  </form>
+{% endblock %}
