@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, send_file
+from flask import Flask, render_template, request, redirect, send_file, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 import os
+import re
+from math import log2
 import io
 import glob
 import requests
@@ -57,10 +59,11 @@ def user_loader(username):
 
 @app.route("/")
 def welcome():
-    print(request.headers.get('Host'))
+    #Proste odesłanie strony powitalnej
     return render_template("welcome.html")
 @app.route("/logout")
 def logout():
+    #Proste wylogowanie
     logout_user()
     return redirect("/")
 
@@ -69,26 +72,57 @@ def register():
     return render_template("register.html")
 @app.route("/register", methods = ['POST'])
 def registerUser():
-    #!!!!!!!!!!!!!!!!!!!!!!!! TODO weryfikacja danych od uzytkownika!!!!!!!!!!!!!!!!!!!!!!!!1
     email = request.form.get("email")
     username = request.form.get("username")
     password = request.form.get("password")
     confirmation = request.form.get("confirm-password")
 
+    #Podstawowa weryfikacja poprawnosci e-mail
+    email_re = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    if not (re.match(email_re, email)):
+        return "Invalid e-mail", 400
+
+    #Potwierdzenie hasla, poniewaz staram sie zachecic uzytkownika do wzmocnienia hasla, a im dluzsze tym latwiej o pomylke
     if password != confirmation:
-        return "Passwords do not match!", 409
-    #!!!!!!!!!!!!!!!!!!!!!!!!TODO entropia hasła!!!!!!!!!!!!!!!!!!!
-    #!!!!!!!!!!!!!!!!!!!!!!!!TODO sprawdzanie czy uzytkownik probowal sql injection!!!!!!!!!!!!!!!!!!!!!
+        return "Passwords do not match!", 400
+
+    #Liczenie entropii w innym pliku
+    ent, pass_msg = tools.passwordEntropy(password)
+
+    #Tworzenie hasha w innym pliku
     hash = tools.registerHash(password)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     db_user = sql.execute("SELECT * FROM users WHERE username=:username", {"username":username}).fetchone()
-    if(db_user == None):
+    db_email = sql.execute("SELECT * FROM users WHERE email=:email", {"email":email}).fetchone()
+    if(db_user == None and db_email == None):
+        #Szybkie sprawdzenie, czy uzytkownik probowal wpisac jakies podejrzane rzeczy w pola tekstowe
+        #Za to, ze nie zadzialaja odpowiadaja inne elementy kodu, tutaj tylko logowanie, aby latwiej bylo zidentyfikowac kto, co i kiedy
+        if("<script>" in email or "<script>" in username):
+            logger.log(request, "SUSPICIOUS", "Registration form possible script injection %s %s" % (email, username))
+        if("'" in email or "'" in username):
+            logger.log(request, "SUSPICIOUS", "Registration form possible SQL injection %s %s" % (email, username))
+        
+        #Rejestracja
         sql.execute("INSERT INTO users (email, username, password) VALUES (:email, :username, :password)", {"email":email, "username":username, "password": hash})
         db.commit()
-        print("Registered user " + username)
-        return "Registration successful"
-    return "Username already in use"
+        logger.log(request, "REGISTER", "Registered user %s %s" % (email, username))
+        content = "Your registration was successful!" 
+        logger.log(request, "EMAIL_SENT", ("Addr:%s;Content:%s" % (email, content)))
+        return "Registration successful - confirmation e-mail sent!<br>" + pass_msg
+
+    elif(db_user == None and db_email != None):
+        #Email juz zarejestrowany -> pominac rejestracje oraz przypomniec uzytkownikowi ze juz ma konto przez email.
+        #Gdy uzytkownik zobaczy ze po rejestracji dalej logowanie nie dziala powinien sprawdzic e-mail zgodnie z informacja o wyslanym potwierdzeniu
+        logger.log(request, "REGISTER_FAIL", "Already registered email %s" % email)
+        content = "You already have account registered or this email!<br> <a href=" + "http://127.0.0.1:5000/resetPassword" + ">Reset password </a>" 
+        print("Sending email... %s %s" % (email, content))
+        logger.log(request, "EMAIL_SENT", ("Addr:%s;Content:%s" % (email, content)))
+        return "Registration successful - confirmation e-mail sent!<br>" + pass_msg
+
+    #Nazwa uzytkownika zajeta -> mozna o tym poinformowac dzieki mechanizmowi potwierdzen email
+    logger.log(request, "REGISTER_FAIL", "Already registered username %s" % username)
+    return "Username already in use", 400
 
 @app.route("/login")
 def login():
