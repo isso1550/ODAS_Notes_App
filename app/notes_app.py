@@ -11,6 +11,8 @@ import tools
 import markdown
 import notecrypt
 import jwtbuilder
+import login_ban_handler
+from logger import Logger
 
 DB_FILE = "./notesapp.db"
 MAX_LOGIN_ATTEMPTS = 5
@@ -28,6 +30,8 @@ app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024 #8mb
 app.secret_key = "abdabdabababababasbasbsabs"
 login_manager.init_app(app)
 #login_manager.login_view = 'login'
+
+logger = Logger()
 
 class User(UserMixin):
     pass
@@ -95,38 +99,44 @@ def loginUser():
     password = request.form.get("password")
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
-    '''
-    login_attempts = sql.execute("SELECT * FROM login_attempts WHERE email = :email", {"email":email}).fetchall()
-    if(login_attempts != None):
-        #Usuwanie przestarzałych prób logowania
-        yesterday = (datetime.utcnow() - ACCOUNT_SUSPENSION_TIME).strftime("%Y-%m-%d %H:%M:%S")
-        sql.execute("DELETE FROM login_attempts WHERE email = :email AND date < (:yesterday)", {"email":email, "yesterday":yesterday})
-        db.commit()
-        login_attempts = sql.execute("SELECT * FROM login_attempts WHERE email = :email", {"email":email}).fetchall()
-        if(login_attempts != None):
-            if (len(login_attempts)==MAX_LOGIN_ATTEMPTS):
-                return "Account temporarily blocked for too many failed logins"
-                #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO wyslij link do zmiany hasla !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    '''
+
+    #Sprawdza, czy użytkownik jest tymczasowo zablokowany 1=ban 0=dostęp
+    res = login_ban_handler.verifyUserBan(db, email, MAX_LOGIN_ATTEMPTS, ACCOUNT_SUSPENSION_TIME)
+    if (res == 1):
+        logger.log(request, "LOGIN_FAIL", ("Login failed on %s account because of ban" % email))
+        return "Account temporarily blocked"
+
     db_hash = sql.execute("SELECT password FROM users WHERE email = :email", {"email":email}).fetchone()
-    #print(db_hash)
     if (db_hash != None):
         db_hash = db_hash[0]
         hash = tools.loginHash(password, db_hash)
         if (hash == db_hash):
             #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
-            #sql.execute("DELETE FROM login_attempts WHERE email = :email", {"email":email})
-            #db.commit()
-
+            login_ban_handler.deleteAllAttempts(db, email)
             username = sql.execute("SELECT username from users WHERE email=:email", {"email":email}).fetchone()[0]
             user = user_loader(username)
             login_user(user)
-
+            logger.log(request, "LOGIN", ("User %s logged in" % user.id))
             return redirect('/mynotes')
-            return "Logged in as " + email
-    #Nieudane logowanie - zapisanie próby i zwrócenie błędu
-    sql.execute("INSERT INTO login_attempts (ip, email, date) VALUES (:ip, :email, CURRENT_TIMESTAMP)", {"ip":request.remote_addr, "email":email})
-    db.commit()
+
+    #Zapis nieudanej próby - zwraca aktualną ilość złych logowań (włącznie z tym właśnie dodanym)
+    count = login_ban_handler.saveFailedLogin(db, email, request)
+    logger.log(request, "LOGIN_FAIL", ("Login failed on %s account" % email))
+
+    if (count >= MAX_LOGIN_ATTEMPTS-2 and count < MAX_LOGIN_ATTEMPTS):
+        #Pozostało 2 lub mniej prób -> informacja dla użytkownika
+        return "Incorrect email or password <br> %i attempts remaining" % (MAX_LOGIN_ATTEMPTS-count), 401
+    
+    if (count >= MAX_LOGIN_ATTEMPTS):
+        #Czas zablokować użytkownika. Na e-mail otrzyma link do odblokowania konta i zmiany hasła
+        logger.log(request, "USER_BAN", ("%s banned for too many login fails" % email))
+        token = jwtbuilder.buildUnbanJWT((email))
+        content = "<a href=" + "http://127.0.0.1:5000/unban?token=" + token + "> Click to unban </a>"
+        content = content + "<br> <a href=" + "http://127.0.0.1:5000/resetPassword" + ">Reset your password</a>" 
+        logger.log(request, "EMAIL_SENT", ("Addr:%s;Content:%s" % (email, content)))
+        return ("Sending email... %s %s" % (email, content))
+
+    #W pozostałych przypadkach logowanie odrzucone bez zbyt szczegółowych informacji co było nie tak
     return "Incorrect email or password", 401
 
 @app.route("/create")
@@ -139,7 +149,6 @@ def createNote():
 @login_required
 def saveNewNote():
     username = current_user.id
-    #!!!!!!!!!!!!!!!!!!!!!!!!TODO GET USERNAME!!!!!!!!!!!!!!!!!!!!!!
     title = request.form.get("title")
     picture_url = request.form.get('picture')
     privacy = request.form.get("privacy")
@@ -246,6 +255,11 @@ def mynotes():
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     private_notes = sql.execute("SELECT id, title, username FROM notes WHERE username = :username", {"username":username}).fetchall()
+    for idx, note in enumerate(private_notes):
+        note = list(note)
+        if type(note[1]) is bytes:
+            note[1] = notecrypt.decrypt_note(note[1]).decode()
+            private_notes[idx] = note
     return render_template("browse.html",  public_notes=private_notes)
 
 
@@ -372,8 +386,22 @@ def getNotePicture(id):
         return send_file(pics[0])
     return send_file(NOTEPIC_SAVE_FOLDER + "/default.png")
 
+@app.route("/unban")
+def unban():
+    args = request.args
+    if(args.get("token") is not None):
+        token = args.get("token")
+        data = jwtbuilder.decodeUnbanJWT(token)
+        email = data['payload']
+        if (email == 1):
+            return "Token invalid"
+        print(email)
+        login_ban_handler.deleteAllAttempts(sqlite3.connect(DB_FILE), email)
+        logger.log(request, "UNBAN", ("Account %s unbanned by email link" % email))
+        return "Unban successful"
+    return "Token invalid"
 if __name__ == "__main__":
-    INIT_DB = True
+    INIT_DB = False
     INIT_USER_FILES = False
     if (INIT_DB):
         print("[*] Init database!")
