@@ -19,8 +19,36 @@
         <option value="unlisted">Unlisted</option>
         <option value="public">Public</option>
     </select>
+  <label for="encrypt">Encrypt</label>
+    <input type="checkbox" name="encrypt" id="encrypt">
+  <label id="passwordlabel" for="password" style="visibility: hidden;">Encryption password</label>
+    <input type="password" name="password" id="password" style="visibility:hidden;">
   <label for="note">Note</label>
     <textarea name ="note" id="note" placeholder="Write your note here!" autocomplete="off" rows="20" cols="60" required></textarea>
   <input type="submit" class="submit-btn" value="Save">
 </form>
+
+<script>
+  function passwordVisibilityReset(){
+    var cb = document.getElementById('encrypt')
+    if (cb.checked == true){
+      document.getElementById('password').style.visibility = "visible"
+      document.getElementById('passwordlabel').style.visibility = "visible"
+    } else if (cb.checked == false){
+      document.getElementById('password').style.visibility = "hidden"
+      document.getElementById('passwordlabel').style.visibility = "hidden"
+    }
+  }
+  
+  document.getElementById('encrypt').addEventListener('click',function(e){
+    passwordVisibilityReset()
+  })
+  window.onload = function(){ passwordVisibilityReset }
+</script>
+<style>
+  #encrypt{
+    height: auto !important;
+    width:auto !important;
+  }
+</style>
 {% endblock %}

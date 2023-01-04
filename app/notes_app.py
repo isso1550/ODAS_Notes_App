@@ -3,8 +3,8 @@ from flask import Flask, render_template, request, redirect, send_file, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 import os
 import re
-from math import log2
-import io
+from time import sleep
+import base64
 import glob
 import requests
 import filetype
@@ -19,12 +19,14 @@ from logger import Logger
 DB_FILE = "./notesapp.db"
 MAX_LOGIN_ATTEMPTS = 5
 ACCOUNT_SUSPENSION_TIME = timedelta(minutes=15)
+HASH_DELAY = 0.5
 
 TEMP_SAVE_FOLDER = "./user_pictures/temp"
 AVATAR_SAVE_FOLDER = "./user_pictures/avatars"
 NOTEPIC_SAVE_FOLDER = "./user_pictures/notepics"
 FILE_ALLOWED_EXTENSIONS = ['png','jpg','jpeg','gif']
 FILE_MAX_SIZE = 8* 1024 * 1024
+
 
 login_manager = LoginManager()
 app = Flask(__name__)
@@ -90,7 +92,7 @@ def registerUser():
     ent, pass_msg = tools.passwordEntropy(password)
 
     #Tworzenie hasha w innym pliku
-    hash = tools.registerHash(password)
+    hash = tools.hash_password(password)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     db_user = sql.execute("SELECT * FROM users WHERE username=:username", {"username":username}).fetchone()
@@ -143,7 +145,7 @@ def loginUser():
     db_hash = sql.execute("SELECT password FROM users WHERE email = :email", {"email":email}).fetchone()
     if (db_hash != None):
         db_hash = db_hash[0]
-        hash = tools.loginHash(password, db_hash)
+        hash = tools.hash_password_salt(password, db_hash)
         if (hash == db_hash):
             #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
             login_ban_handler.deleteAllAttempts(db, email)
@@ -182,97 +184,191 @@ def createNote():
 @app.route("/create", methods = ['POST'])
 @login_required
 def saveNewNote():
+    #Pobranie danych i walidacja
     username = current_user.id
+
     title = request.form.get("title")
-    picture_url = request.form.get('picture')
-    privacy = request.form.get("privacy")
-    note = request.form.get("note")
-    
-    #privacy
-    if(privacy not in ["private","unlisted","public"]):
-        print(privacy)
-        #!!!!!!!!!!!!!!!!!!!!!!!!!TODO log suspicious action!!!!!!!!!!!!!!!!!!!!!!!!!!
-        return "Suspicious action logged"
-    if(privacy == "private"):
-        title = notecrypt.encrypt_note(title)
-        note = notecrypt.encrypt_note(note)
-        print("Remember to crypt!")
-    #title
     if(title == ""):
         title = "Untitled"
+    if(len(title) > FILE_MAX_SIZE/8):
+        logger.log(request, "SUSPICIOUS", "Title too long by %s" % username)
+        return "Title too long"
+    picture_url = request.form.get('picture')
+    #_____________________________________________URL REGEX
+    privacy = request.form.get("privacy")
+    if(privacy not in ["private","unlisted","public"]):
+        print(privacy)
+        logger.log(request, "SUSPICIOUS", "Note privacy not in list %s" % privacy)
+        return redirect("/create")
+    password = request.form.get("password")
+    hash = "" #inicjalizacja, na wypadek jakby nie było hasła
+    encrypt = request.form.get("encrypt")
+    #Zamiana zmiennej encrypt z "on"/"off" na 1/0, gdzie 1 to włączona
+    if(encrypt == "on"):
+        encrypt = 1
+        #Tworzę klucz do AES na podstawie hasła podanego przez użytkownika -> więcej w odpowiednim pliku
+        user_key, hash = notecrypt.get_user_key(password)
+    elif(encrypt == "off" or encrypt is None):
+        encrypt = 0
+    else:
+        logger.log(request, "SUSPICIOUS", "Create note checkbox value error %s %s" % (encrypt, username))
+        return redirect("/create")
+
+    note = request.form.get("note")
+    if(len(title) > FILE_MAX_SIZE/8):
+        logger.log(request, "SUSPICIOUS", "Note too long by %s" % username)
+        return "Note too long"
     
+    #Sprawdzenie potencjalnych prób SQL injection
+    if(True in ["'" in text for text in [title,note]]):
+        logger.log(request, "SUSPICIOUS", "Create note form possible SQL injection %s %s" % (title, username))
+    #Sprawdzenie potencjalnych prób code injection
+    if(True in ["<script>" in text for text in [title,note]]):
+        logger.log(request, "SUSPICIOUS", "Create note form possible code injection %s %s" % (title, username))
+
+    #Najpierw zajmuje się notatką tekstową
+    if(encrypt == 1):
+        #Notatki szyfrowane są podwójnie: raz kluczem serwera, raz kluczem użytkownika
+        note = notecrypt.encrypt_note_with_user_password(note, user_key)
+        note = notecrypt.encrypt_note(note)
+    elif(privacy == "private" or privacy == "unlisted"):
+        #Jeśli notatka jest prywatna to jest również szyfrowana, ale tylko kluczem serwera
+        note = notecrypt.encrypt_note(note)
+
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
-    #!!!!!!!!!!!!!!!!!!!TODO sprawdzenie czy uzytkownik probowal sqlnjection!!!!!!!!!!!!!!!!!!!!
-    sql.execute("INSERT INTO notes (username, title, privacy, note) VALUES (:username, :title, :privacy, :note)", {"username":username, "title": title, "privacy": privacy, "note": note})
+    logger.log(request, "CREATE_NOTE", "New note created by %s" % username)
+    sql.execute("INSERT INTO notes (username, title, privacy, note, encrypt, password) VALUES (:username, :title, :privacy, :note, :encrypt, :password)", {"username":username, "title": title, "privacy": privacy, "note": note, "encrypt": encrypt, "password": hash})
     db.commit()
     recent_id = sql.lastrowid
 
-    #pic
+    #Zajmuje się zdjęciem
+
+    #Usunięcie starych zdjęc z aktualnym id notatki (nigdy nie powinno takich być, ale dla pewności zabezpiecza)
+    pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(recent_id) + ".*")
+    if (len(pics) > 0):
+        for p in pics:
+            os.remove(p)
+        
     if (picture_url == ""):
-        pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(recent_id) + ".*")
-        if (len(pics) > 0):
-            print("UWAGA Narażono użytkownika na wyciek danych, ale serwer temu zapobiegł. Następnym razem usunąć zdjęcia nieistniejących notatek.")
-            for p in pics:
-                os.remove(p)
+        #Nie ma URL do zdjęcia, więc to wszystko
         return redirect("/render/" + str(recent_id))
-    #!!!!!!!!!!!!!!!!!!!!!!!TODO upewnic sie testami ze jest ok !!!!!!!!!!!!!!!!!!!!!!!!
     try:
         response = requests.get(picture_url)
+        logger.log(request, "REQUEST_SENT", "GET url %s" % picture_url)
         if (len(response.content) > FILE_MAX_SIZE):
             return redirect("/render/" + str(recent_id))
 
+        #Zapisuje do tymczasowego pliku, sprawdza rzeczywistą strukturę pliku
         temp_filepath = TEMP_SAVE_FOLDER + "/" + str(recent_id) + ".png"
         open(temp_filepath, "wb").write(response.content)
         kind = filetype.guess(temp_filepath)
         os.remove(temp_filepath)
         if kind is None:
-            #_________________________________________________________LOG SUSPICIOUS
+            #Nie udało się zgadnąć, rozszerzenie nieznane, nie można zapisać
+            logger.log(request, "SUSPICIOUS", "Invalid file type during note creation")
             return "File invalid", 400
         if kind.extension in FILE_ALLOWED_EXTENSIONS:
-            #Usuwa stare (zeby nie bylo wielu zdjec z roznymi rozszerzeniami dla jednego uzytkownika)
-            pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(recent_id) + ".*")
-            for pic in pics:
-                os.remove(pic)
+            #Zapisuje w rzeczywistym folderze
             filename = "/"+ str(recent_id) + "." + str(kind.extension)
             filepath = os.path.join(NOTEPIC_SAVE_FOLDER + filename)
-            if (privacy == "private"):
-                open(filepath,'wb').write(notecrypt.encrypt_note((response.content)))
-            else :
-                open(filepath, 'wb').write(response.content)
-            
+            data = ""
+            if (encrypt == 1):
+                data = notecrypt.encrypt_note_with_user_password(response.content, user_key)
+                data = notecrypt.encrypt_note(data)
+            elif (privacy == "private" or privacy == "unlisted"):
+                data = notecrypt.encrypt_note(response.content)
+            else:
+                data = response.content
+            logger.log(request, "CREATE_NOTE", "New file saved %s %s" % (username, filepath))
+            open(filepath, "wb").write(data)
         else:
             return "Unallowed filetype", 400
     except Exception as e:
         print(e)
-        return "Incorrect URL", 400
-
-
+        logger.log(request, "CREATE_NOTE", "Creation fail - incorrect data %s %s" % (picture_url, username))
+        return "Incorrect data", 400
     return redirect("/render/" + str(recent_id))
 
-@app.route("/render/<id>")
-def renderNote(id):
+@app.route("/render/<id>", methods=['GET','POST'])
+def renderNote(id, password=None):
+    #2 metody: GET dla notatek nieszyfrowanych przez użytkownika, POST z hasłem dla notatek szyfrowanych
+    if(request.method == 'POST'):
+        password = request.form.get("password")
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     try:
-        author, title, privacy, note = sql.execute("SELECT username, title, privacy, note FROM notes WHERE id = :id", {"id":id}).fetchone()
+        author, title, privacy, note, encrypt, db_hash = sql.execute("SELECT username, title, privacy, note, encrypt, password FROM notes WHERE id = :id", {"id":id}).fetchone()
     except:
         return redirect("/")
+
+    if(encrypt == 1):
+        #Proste przekierowanie, jeśli nie ma hasła a powinno być
+        if (password is None):
+            return redirect("/enterNotePassword?note="+str(id))
+        #Szybka weryfikacja hasha, lepsza kontrola nad działaniem w porównaniu do deszyfrowania na ślepo
+        hash = tools.hash_password_salt(password, db_hash)
+        #Opoznienie przeciwko bruteforce    
+        sleep(HASH_DELAY)
+        if (hash != db_hash):
+            return "Invalid data"
+        
+
     if (privacy == "private"):
         if not (current_user.is_authenticated):
             return "Login to browse private notes!"
         username = current_user.id
         if (username != author):
             return "You are not the author!"
-        title = notecrypt.decrypt_note(title)
-        note = notecrypt.decrypt_note(note).decode()
-        1==1
+
+    print(encrypt, privacy)
+    if (encrypt == 0 and privacy != "public"):
+        note = notecrypt.decrypt_note(note)
+        note = note.decode()
+    elif (encrypt == 1):
+        user_key, hash = notecrypt.get_user_key(password, db_hash)
+        note = notecrypt.decrypt_note(note)
+        note = notecrypt.decrypt_note_user_password(note, user_key)
+        note = note.decode()
+
+    
+
     note = markdown.markdown(note)
-    #tekst wybielony przed wyswietleniem
-    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO wyswietlanie zdjec!!!!!!!!!!!!!!!!!!!!!!!
-    #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!TODO poprawic render.html template!!!!!!!!!!!!!
+    #Tekst wybielony przed wyswietleniem
+    #Tytuły nie są stylowane, więc czyszczeniem zajmie się JINJA
     note = tools.cleanText(note)
-    return render_template("render.html", note=note)
+
+    #Pobranie załączonego zdjęcia
+    #Wyszukanie zdjęcia z folderu
+    pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(id) + ".*")
+    if len(pics) > 0:
+        path = pics[0]
+    else:
+        path = NOTEPIC_SAVE_FOLDER + "/default.png"
+
+    #Wczytanie danych zdjęcia
+    f = open(path, "rb")
+    pic = f.read()
+    f.close()
+    if (privacy != "public" or encrypt == 1):
+        #Dekrypcja w zależności od potrzeb
+        if (encrypt == 1):
+            pic = notecrypt.decrypt_note(pic)
+            pic = notecrypt.decrypt_note_user_password(pic, user_key)
+        elif (privacy != "public"):
+            pic = notecrypt.decrypt_note(pic)
+    ext = pics[0].split(".")[-1]
+    mimetype = "image/" + ext
+    myImage = base64.b64encode(pic).decode("utf-8")
+    #Przestłanie szablonu razem ze zdjęciem kodowanym w base64
+    return render_template("render.html", note=note, title=title, mimetype = mimetype, myImage = myImage)
+
+@app.route("/enterNotePassword")
+def enterNotePassword():
+    #Mały, prosty formularz do wpisania hasła do notatki
+    return render_template("enterNotePassword.html")
+
+
 
 
 @app.route("/browse")
@@ -329,7 +425,7 @@ def saveNewPassword():
         return "Token invalid"
     username = data['payload'][0]
     email = data['payload'][1]
-    hash = tools.registerHash(password)
+    hash = tools.hash_password(password)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     sql.execute("UPDATE users SET password=:password WHERE username=:username AND email=:email", {"password":hash, "username":username, "email":email})
@@ -392,34 +488,6 @@ def getAvatar():
         print(e)
         return send_file(AVATAR_SAVE_FOLDER + "/default.png")
 
-@app.route("/getNotePicture/<id>")
-def getNotePicture(id):
-    db = sqlite3.connect(DB_FILE)
-    sql = db.cursor()
-    try:
-        author, privacy= sql.execute("SELECT username, privacy FROM notes WHERE id = :id", {"id":id}).fetchone()
-    except:
-        return redirect("/")
-    if (privacy == "private"):
-        if not (current_user.is_authenticated):
-            return "Login to browse private notes!"
-        username = current_user.id
-        if (username != author):
-            return "You are not the author!"
-        
-    pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(id) + ".*")
-    if len(pics) > 0:
-        if (privacy == "private"):
-            f = open(pics[0], "rb")
-            pic = f.read()
-            f.close()
-            pic = notecrypt.decrypt_note(pic)
-            ext = pics[0].split(".")[-1]
-            print(pic)
-            return send_file(io.BytesIO(pic), mimetype="image/"+ext)
-        return send_file(pics[0])
-    return send_file(NOTEPIC_SAVE_FOLDER + "/default.png")
-
 @app.route("/unban")
 def unban():
     args = request.args
@@ -451,7 +519,7 @@ if __name__ == "__main__":
         sql.execute("DELETE FROM login_attempts")
 
         sql.execute("DROP TABLE IF EXISTS notes;")
-        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256));")
+        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256), encrypt INTEGER, password varchar(128));")
         sql.execute("DELETE FROM notes;")
         sql.execute("INSERT INTO notes (username, note, id) VALUES ('bob', 'To jest sekret!', 1);")
         db.commit()

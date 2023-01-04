@@ -12,7 +12,7 @@ CLEAN_TAGS = ["h1","h2","h3","abbr", "acronym", "b", "blockquote", "br", "code",
 
 #   Przetwarzanie hasła na hash
 #   Użyta funkcja jednokierunkowa: sha256 z pakietu passlib.hash
-def registerHash(password):
+def hash_password(password):
     #pierwszy hash
     hash = sha256_crypt.hash(password, rounds=535000)
     #wykorzystanie soli wygenerowanej losowo przez funkcję sha256_crypt
@@ -22,7 +22,7 @@ def registerHash(password):
         hash = sha256_crypt.hash(hash, rounds=535000, salt=salt)
     return hash
 
-def loginHash(password, db_hash):
+def hash_password_salt(password, db_hash):
     salt = db_hash.split("$")[3]
     #pierwszy hash
     hash = sha256_crypt.hash(password, rounds=535000, salt=salt)
