@@ -35,7 +35,6 @@ class Logger():
         try:
             db = sqlite3.connect(self.DB_FILE)
             sql = db.cursor()
-            print(request.remote_addr, request.url)
             sql.execute("INSERT INTO logs(date, ip, location, class, action) VALUES (CURRENT_TIMESTAMP, :ip, :location, :class, :action)", {"ip":request.remote_addr, "location":request.url, "class":cl, "action":action})
             db.commit()
             return 0

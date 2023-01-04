@@ -7,6 +7,7 @@ from time import sleep
 import base64
 import glob
 import requests
+import time
 import filetype
 import sqlite3
 import tools
@@ -78,11 +79,24 @@ def registerUser():
     username = request.form.get("username")
     password = request.form.get("password")
     confirmation = request.form.get("confirm-password")
+    #Weryfikacja poprawnosci nazwy uzytkownika
+        #user_re = r'^[a-zA-z1-9!"#$%&\'()*+.\-\/:;<=>?@[\\\]^_`{|}~]*$'
+        #if not (re.match(user_re, username)):
+    if (" " in username):
+        return "Username contains illegal characters: whitespace"
+    elif ("," in username):
+        #Używany do udostepniania dla wielu użytkowników
+        return "Username contains illegal characters: comma"
+    if (len(username) > 100):
+        return "Too long username"
+    
 
     #Podstawowa weryfikacja poprawnosci e-mail
     email_re = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     if not (re.match(email_re, email)):
         return "Invalid e-mail", 400
+    if (len(email) > 100):
+        return "Too long e-mail"
 
     #Potwierdzenie hasla, poniewaz staram sie zachecic uzytkownika do wzmocnienia hasla, a im dluzsze tym latwiej o pomylke
     if password != confirmation:
@@ -190,14 +204,18 @@ def saveNewNote():
     title = request.form.get("title")
     if(title == ""):
         title = "Untitled"
-    if(len(title) > FILE_MAX_SIZE/8):
-        logger.log(request, "SUSPICIOUS", "Title too long by %s" % username)
+    if(len(title) > 100):
         return "Title too long"
     picture_url = request.form.get('picture')
-    #_____________________________________________URL REGEX
+
+    ext_string = "|".join(FILE_ALLOWED_EXTENSIONS)
+    #Sprawdzenie url wyrazeniem regularnym
+    url_re = r'\b(http:\/\/|https:\/\/)[A-Za-z0-9!"#$%&\'()*+.,\-\/:;<=>?@[\\\]^_`{|}~*$]+\.('+ ext_string +r')\b'
+    if not (re.match(url_re, picture_url)):
+        return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
+
     privacy = request.form.get("privacy")
     if(privacy not in ["private","unlisted","public"]):
-        print(privacy)
         logger.log(request, "SUSPICIOUS", "Note privacy not in list %s" % privacy)
         return redirect("/create")
     allowed = ""
@@ -220,8 +238,7 @@ def saveNewNote():
         return redirect("/create")
 
     note = request.form.get("note")
-    if(len(title) > FILE_MAX_SIZE/8):
-        logger.log(request, "SUSPICIOUS", "Note too long by %s" % username)
+    if(len(title) > 500):
         return "Note too long"
     
     #Sprawdzenie potencjalnych prób SQL injection
@@ -260,14 +277,29 @@ def saveNewNote():
         #Nie ma URL do zdjęcia, więc to wszystko
         return redirect("/render/" + str(recent_id))
     try:
-        response = requests.get(picture_url)
+        response = requests.get(picture_url, stream=True)
         logger.log(request, "REQUEST_SENT", "GET url %s" % picture_url)
-        if (len(response.content) > FILE_MAX_SIZE):
-            return redirect("/render/" + str(recent_id))
+        response_content = b''
+        response_size = 0
+        response_start = time.time()
+        #Pobieranie w formie stream, aby przypadkiem nie pobrać pliku tak dużego, że nawet w formie tymczasowej mógłby być problemem
+        for chunk in response.iter_content(1024):
+            if (time.time() - response_start > 10): #10 sekund
+                logger.log(request, "CREATE_NOTE", "Create note fail - donwload request timeout")
+                return "Error during image download"
+            response_size += len(chunk)
+            if (response_size > FILE_MAX_SIZE):
+                logger.log(request, "CREATE_NOTE", "Create note fail - donwload request response too large")
+                return "Image too large<br>Max file size is " + FILE_MAX_SIZE
+            response_content += chunk
+
+        if (len(response_content) > FILE_MAX_SIZE):
+            logger.log(request, "CREATE_NOTE", "Create note fail - donwload request response too large")
+            return "Image too large<br>Max file size is " + FILE_MAX_SIZE
 
         #Zapisuje do tymczasowego pliku, sprawdza rzeczywistą strukturę pliku
         temp_filepath = TEMP_SAVE_FOLDER + "/" + str(recent_id) + ".png"
-        open(temp_filepath, "wb").write(response.content)
+        open(temp_filepath, "wb").write(response_content)
         kind = filetype.guess(temp_filepath)
         os.remove(temp_filepath)
         if kind is None:
@@ -280,12 +312,12 @@ def saveNewNote():
             filepath = os.path.join(NOTEPIC_SAVE_FOLDER + filename)
             data = ""
             if (encrypt == 1):
-                data = notecrypt.encrypt_note_with_user_password(response.content, user_key)
+                data = notecrypt.encrypt_note_with_user_password(response_content, user_key)
                 data = notecrypt.encrypt_note(data)
             elif (privacy == "private" or privacy == "unlisted"):
-                data = notecrypt.encrypt_note(response.content)
+                data = notecrypt.encrypt_note(response_content)
             else:
-                data = response.content
+                data = response_content
             logger.log(request, "CREATE_NOTE", "New file saved %s %s" % (username, filepath))
             open(filepath, "wb").write(data)
         else:
@@ -535,7 +567,7 @@ if __name__ == "__main__":
         sql.execute("DELETE FROM login_attempts")
 
         sql.execute("DROP TABLE IF EXISTS notes;")
-        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256), encrypt INTEGER, password varchar(128), allowed varchar(256));")
+        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(700), encrypt INTEGER, password varchar(128), allowed varchar(256));")
         sql.execute("DELETE FROM notes;")
         sql.execute("INSERT INTO notes (username, note, id) VALUES ('bob', 'To jest sekret!', 1);")
         db.commit()
