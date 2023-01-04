@@ -200,6 +200,11 @@ def saveNewNote():
         print(privacy)
         logger.log(request, "SUSPICIOUS", "Note privacy not in list %s" % privacy)
         return redirect("/create")
+    allowed = ""
+    #Jeśli prywatność ustawiona na unlisted to przeczytać notatkę lub spróbować ją odszyfrować hasłem mogą tylko użytkownicy z listy, którzy mają link
+    #Wyjątek -> allowed="" wtedy każdy z linkiem może przeczytać/odszyfrować hasłem
+    if(privacy == "unlisted"):
+        allowed = request.form.get("allowedUsers")
     password = request.form.get("password")
     hash = "" #inicjalizacja, na wypadek jakby nie było hasła
     encrypt = request.form.get("encrypt")
@@ -238,7 +243,8 @@ def saveNewNote():
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     logger.log(request, "CREATE_NOTE", "New note created by %s" % username)
-    sql.execute("INSERT INTO notes (username, title, privacy, note, encrypt, password) VALUES (:username, :title, :privacy, :note, :encrypt, :password)", {"username":username, "title": title, "privacy": privacy, "note": note, "encrypt": encrypt, "password": hash})
+    sql.execute("INSERT INTO notes (username, title, privacy, note, encrypt, password, allowed) VALUES (:username, :title, :privacy, :note, :encrypt, :password, :allowed)",
+     {"username":username, "title": title, "privacy": privacy, "note": note, "encrypt": encrypt, "password": hash, "allowed": allowed})
     db.commit()
     recent_id = sql.lastrowid
 
@@ -298,21 +304,9 @@ def renderNote(id, password=None):
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     try:
-        author, title, privacy, note, encrypt, db_hash = sql.execute("SELECT username, title, privacy, note, encrypt, password FROM notes WHERE id = :id", {"id":id}).fetchone()
+        author, title, privacy, note, encrypt, db_hash, allowed = sql.execute("SELECT username, title, privacy, note, encrypt, password, allowed FROM notes WHERE id = :id", {"id":id}).fetchone()
     except:
         return redirect("/")
-
-    if(encrypt == 1):
-        #Proste przekierowanie, jeśli nie ma hasła a powinno być
-        if (password is None):
-            return redirect("/enterNotePassword?note="+str(id))
-        #Szybka weryfikacja hasha, lepsza kontrola nad działaniem w porównaniu do deszyfrowania na ślepo
-        hash = tools.hash_password_salt(password, db_hash)
-        #Opoznienie przeciwko bruteforce    
-        sleep(HASH_DELAY)
-        if (hash != db_hash):
-            return "Invalid data"
-        
 
     if (privacy == "private"):
         if not (current_user.is_authenticated):
@@ -320,9 +314,28 @@ def renderNote(id, password=None):
         username = current_user.id
         if (username != author):
             return "You are not the author!"
+    elif (privacy == "unlisted"):
+        if (allowed != ""):
+            allowed_users = allowed.split(",")
+            if not (current_user.is_authenticated):
+                return "This note settings require login"
+            username = current_user.id
+            if not (username in allowed_users or username == author):
+                logger.log(request, "SUSPICIOUS", "User %s tried to see unlisted note without permission" % username)
+                return "You are not allowed to see this note"
 
-    print(encrypt, privacy)
+
+    if(encrypt == 1):
+        #Proste przekierowanie, jeśli nie ma hasła a powinno być
+        if (password is None):
+            return redirect("/enterNotePassword?note="+str(id))
+        #Szybka weryfikacja hasha, lepsza kontrola nad działaniem w porównaniu do deszyfrowania na ślepo
+        hash = tools.hash_password_salt(password, db_hash)
+        if (hash != db_hash):
+            return "Invalid data"
+        
     if (encrypt == 0 and privacy != "public"):
+        
         note = notecrypt.decrypt_note(note)
         note = note.decode()
     elif (encrypt == 1):
@@ -342,22 +355,25 @@ def renderNote(id, password=None):
     #Wyszukanie zdjęcia z folderu
     pics = glob.glob(NOTEPIC_SAVE_FOLDER + "/" + str(id) + ".*")
     if len(pics) > 0:
+        default_pic = False
         path = pics[0]
     else:
+        default_pic = True
         path = NOTEPIC_SAVE_FOLDER + "/default.png"
 
     #Wczytanie danych zdjęcia
     f = open(path, "rb")
     pic = f.read()
     f.close()
-    if (privacy != "public" or encrypt == 1):
-        #Dekrypcja w zależności od potrzeb
-        if (encrypt == 1):
-            pic = notecrypt.decrypt_note(pic)
-            pic = notecrypt.decrypt_note_user_password(pic, user_key)
-        elif (privacy != "public"):
-            pic = notecrypt.decrypt_note(pic)
-    ext = pics[0].split(".")[-1]
+    if not default_pic:
+        if (privacy != "public" or encrypt == 1):
+            #Dekrypcja w zależności od potrzeb
+            if (encrypt == 1):
+                pic = notecrypt.decrypt_note(pic)
+                pic = notecrypt.decrypt_note_user_password(pic, user_key)
+            elif (privacy != "public"):
+                pic = notecrypt.decrypt_note(pic)
+    ext = path.split(".")[-1]
     mimetype = "image/" + ext
     myImage = base64.b64encode(pic).decode("utf-8")
     #Przestłanie szablonu razem ze zdjęciem kodowanym w base64
@@ -519,7 +535,7 @@ if __name__ == "__main__":
         sql.execute("DELETE FROM login_attempts")
 
         sql.execute("DROP TABLE IF EXISTS notes;")
-        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256), encrypt INTEGER, password varchar(128));")
+        sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(256), encrypt INTEGER, password varchar(128), allowed varchar(256));")
         sql.execute("DELETE FROM notes;")
         sql.execute("INSERT INTO notes (username, note, id) VALUES ('bob', 'To jest sekret!', 1);")
         db.commit()

@@ -19,36 +19,64 @@
         <option value="unlisted">Unlisted</option>
         <option value="public">Public</option>
     </select>
+  <div id="allowed_users_cont" class="hid">
+    <label for="allowedUsers">List of allowed users (split using comma ",")</label>
+    <input type="text" name="allowedUsers" id="allowedUsers" placeholder="Everyone with link" autocomplete="off">
+  </div>
   <label for="encrypt">Encrypt</label>
     <input type="checkbox" name="encrypt" id="encrypt">
-  <label id="passwordlabel" for="password" style="visibility: hidden;">Encryption password</label>
-    <input type="password" name="password" id="password" style="visibility:hidden;">
+  <div id="password_cont" class="hid">
+    <label id="passwordlabel" for="password">Encryption password</label>
+    <input type="password" name="password" id="password">
+  </div>
   <label for="note">Note</label>
     <textarea name ="note" id="note" placeholder="Write your note here!" autocomplete="off" rows="20" cols="60" required></textarea>
   <input type="submit" class="submit-btn" value="Save">
 </form>
 
 <script>
+  function allowedUsersVisibilityReset(){
+    var cb = document.getElementById('privacy')
+    if (cb.value == "unlisted"){
+      document.getElementById('allowed_users_cont').classList = "shw"
+    } else {
+      document.getElementById('allowed_users_cont').classList = "hid"
+    }
+  }
   function passwordVisibilityReset(){
     var cb = document.getElementById('encrypt')
     if (cb.checked == true){
-      document.getElementById('password').style.visibility = "visible"
-      document.getElementById('passwordlabel').style.visibility = "visible"
+      document.getElementById('password_cont').classList = "shw"
     } else if (cb.checked == false){
-      document.getElementById('password').style.visibility = "hidden"
-      document.getElementById('passwordlabel').style.visibility = "hidden"
+      document.getElementById('password_cont').classList = "hid"
     }
   }
   
   document.getElementById('encrypt').addEventListener('click',function(e){
     passwordVisibilityReset()
   })
-  window.onload = function(){ passwordVisibilityReset }
+  document.getElementById('privacy').addEventListener('change', function(e){
+    allowedUsersVisibilityReset()
+  })
+  window.onload = function(){
+    passwordVisibilityReset;
+    allowedUsersVisibilityReset;
+  }
 </script>
 <style>
   #encrypt{
     height: auto !important;
     width:auto !important;
+  }
+  .hid {
+    height:0;
+    width:0;
+    visibility:hidden;
+  }
+  .shw {
+    height:auto;
+    width:auto;
+    visibility: visible;
   }
 </style>
 {% endblock %}
