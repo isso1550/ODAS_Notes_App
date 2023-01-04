@@ -494,6 +494,8 @@ def updateAvatar():
     file = request.files['file']
     if file.filename == "":
         return redirect("/me")
+    if file.filename.split(".")[-1] not in FILE_ALLOWED_EXTENSIONS:
+        return "Unallowed filetype"
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
     try:
