@@ -1,0 +1,35 @@
+#Notes app NGINX config
+
+upstream flask{
+	server 127.0.0.1:29000;
+}
+
+server {
+	listen 443 ssl;
+	listen [::]:443 ssl;
+
+	ssl_certificate /etc/ssl/certs/notes-app-nopem.crt;
+	ssl_certificate_key /etc/ssl/keys/notes-app-nopem.key;
+	
+	server_tokens off;
+
+	root /var/www/html;
+	server_name 127.0.0.1;
+	location / {
+		include /etc/nginx/uwsgi_params;
+		uwsgi_pass flask;
+		uwsgi_param Host $host;
+        		uwsgi_param X-Real-IP $remote_addr;
+        		uwsgi_param X-Forwarded-For $proxy_add_x_forwarded_for;
+        		uwsgi_param X-Forwarded-Proto $http_x_forwarded_proto;
+	}
+}
+
+server {
+	listen 80;
+	listen [::]:80;
+	server_name 127.0.0.1;
+	
+	server_tokens off;
+	return 301 https://$server_name$request_uri;
+}

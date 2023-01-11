@@ -211,8 +211,9 @@ def saveNewNote():
     ext_string = "|".join(FILE_ALLOWED_EXTENSIONS)
     #Sprawdzenie url wyrazeniem regularnym
     url_re = r'\b(http:\/\/|https:\/\/)[A-Za-z0-9!"#$%&\'()*+.,\-\/:;<=>?@[\\\]^_`{|}~*$]+\.('+ ext_string +r')\b'
-    if not (re.match(url_re, picture_url)):
-        return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
+    if (picture_url != ""):
+        if not (re.match(url_re, picture_url)):
+            return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
 
     privacy = request.form.get("privacy")
     if(privacy not in ["private","unlisted","public"]):
@@ -584,4 +585,7 @@ if __name__ == "__main__":
         all.remove(glob.glob(NOTEPIC_SAVE_FOLDER + "/default*")[0])
         for file in all:
             os.remove(file)
+
+
+if __name__ == "__main__":
     app.run("0.0.0.0", 5000)

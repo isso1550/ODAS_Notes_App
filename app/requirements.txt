@@ -1,0 +1,9 @@
+passlib
+bleach
+markdown
+flask
+flask_login
+pyjwt
+filetype
+requests
+pycryptodome

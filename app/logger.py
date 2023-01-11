@@ -38,6 +38,10 @@ class Logger():
             sql.execute("INSERT INTO logs(date, ip, location, class, action) VALUES (CURRENT_TIMESTAMP, :ip, :location, :class, :action)", {"ip":request.remote_addr, "location":request.url, "class":cl, "action":action})
             db.commit()
             return 0
+        except sqlite3.OperationalError as e:
+            #Nie ma tabeli na logi
+            self.initialize_database()
+            self.log(request=request, cl=cl, action=action)
         except Exception as e:
             print(e)
             return 1
