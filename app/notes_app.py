@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, send_file, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
+from dotenv import load_dotenv
 import os
 import re
-from time import sleep
 import base64
 import glob
 import requests
@@ -17,6 +17,8 @@ import jwtbuilder
 import login_ban_handler
 from logger import Logger
 
+load_dotenv()
+
 DB_FILE = "./notesapp.db"
 MAX_LOGIN_ATTEMPTS = 5
 ACCOUNT_SUSPENSION_TIME = timedelta(minutes=15)
@@ -28,11 +30,13 @@ NOTEPIC_SAVE_FOLDER = "./user_pictures/notepics"
 FILE_ALLOWED_EXTENSIONS = ['png','jpg','jpeg','gif']
 FILE_MAX_SIZE = 8* 1024 * 1024
 
+APP_SECRET_KEY = os.getenv("APP_SECRET_KEY")
+print(APP_SECRET_KEY)
 
 login_manager = LoginManager()
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024 #8mb
-app.secret_key = "abdabdabababababasbasbsabs"
+app.secret_key = APP_SECRET_KEY
 login_manager.init_app(app)
 #login_manager.login_view = 'login'
 
@@ -82,6 +86,9 @@ def registerUser():
     #Weryfikacja poprawnosci nazwy uzytkownika
         #user_re = r'^[a-zA-z1-9!"#$%&\'()*+.\-\/:;<=>?@[\\\]^_`{|}~]*$'
         #if not (re.match(user_re, username)):
+    for arg in [email, username, password, confirmation]:
+        if (len(arg) < 1):
+            return "Required data not found"
     if (" " in username):
         return "Username contains illegal characters: whitespace"
     elif ("," in username):
@@ -104,6 +111,9 @@ def registerUser():
 
     #Liczenie entropii w innym pliku
     ent, pass_msg = tools.passwordEntropy(password)
+
+    if (ent < 50):
+        return "Password is too weak! Use more characters and make sure to use both small and capital letters, digits and special characters! <br> Account not created."
 
     #Tworzenie hasha w innym pliku
     hash = tools.hash_password(password)
@@ -147,6 +157,9 @@ def login():
 def loginUser():
     email = request.form.get("email")
     password = request.form.get("password")
+    for arg in [email, password]:
+        if (len(arg) < 1):
+            return "Required data not found"
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
 
@@ -214,7 +227,12 @@ def saveNewNote():
     if (picture_url != ""):
         if not (re.match(url_re, picture_url)):
             return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
-
+        if (".." in picture_url or "%2E%2E" in picture_url):
+            logger.log(request, "SUSPICIOUS", "Possible path traversal attempt %s %s" % (username, picture_url))
+            return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
+        if ("%00" in picture_url):
+            logger.log(request, "SUSPICIOUS", "Possible null byte poisoning attempt %s %s" % (username, picture_url))
+            return "Invalid picture url<br>Only http and https link accepted<br>Accepted extensions: " + " ".join(FILE_ALLOWED_EXTENSIONS), 400
     privacy = request.form.get("privacy")
     if(privacy not in ["private","unlisted","public"]):
         logger.log(request, "SUSPICIOUS", "Note privacy not in list %s" % privacy)
@@ -444,6 +462,7 @@ def mynotes():
 
 @app.route("/resetPassword")
 def resetpassword():
+    #Proste przekierowania
     args = request.args
     if(args.get("token") is not None):
         return render_template("newPassword.html")
@@ -453,14 +472,18 @@ def sendResetEmail():
     email = request.form.get("email")
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
+    #Pobiera użytkownika z podanym emailem
     try:
-        sql.execute("SELECT username, email, password FROM users WHERE email = :email", {"email":email})
+        sql.execute("SELECT username, email FROM users WHERE email = :email", {"email":email})
         row = sql.fetchone()
-        username, email, password = row
+        username, email= row
     except:
+        #W aktualnym stanie na podstawie przekierowań można odczytać, czy dany email jest zarejestrowany
+        #Oczywiście wynika to z uproszczenia aplikacji w celu ułatwienia testowania/sprawdzania
+        #W realnych warunkach zamiast wysłania maila funkcja zwracałaby takie samo przekierowanie w każdym przypadku
         return redirect("/")
-    print("Prośba zmiany hasła")
-    print(username, email, password)
+    logger.log(request, "PASSWORD_RESET", "User asked to reset his password %s %s" % (email, username))
+    #Koduje dane do tokenu i wysyła na email
     token = jwtbuilder.buildUserDataJWT(row)
     return ("Sending email... %s %s" % (email, "http://127.0.0.1:5000/resetPassword?token="+token))
 
@@ -468,15 +491,16 @@ def sendResetEmail():
 def saveNewPassword():
     password = request.form.get('password')
     token = request.form.get('token')
-    print(token)
     data = jwtbuilder.decodeUserDataJWT(token)
     if (data == 1):
+        #Funkcja decode zwraca 1 jeśli token jest nieaktualny
         return "Token invalid"
     username = data['payload'][0]
     email = data['payload'][1]
     hash = tools.hash_password(password)
     db = sqlite3.connect(DB_FILE)
     sql = db.cursor()
+    logger.log(request, "PASSWORD_RESET", "User changed his password %s %s" % (email,username))
     sql.execute("UPDATE users SET password=:password WHERE username=:username AND email=:email", {"password":hash, "username":username, "email":email})
     db.commit()
     return "Success"
@@ -487,6 +511,9 @@ def myData():
     username = current_user.id
     return render_template("me.html", username=username)
 
+#2 metody zwiazane z wgrywaniem pliku z dysku jako zdjecie profilowe uzytkownika
+#napisane, poniewaz zle przeczytalem wymagania projektu, a szkoda usuwac
+'''
 @app.route("/updateAvatar", methods=['POST'])
 @login_required
 def updateAvatar():
@@ -523,7 +550,7 @@ def updateAvatar():
     except:
         return redirect("/me")
     return redirect("/me")
-
+'''
 @app.route("/getAvatar")
 @login_required
 def getAvatar():
@@ -538,6 +565,7 @@ def getAvatar():
     except Exception as e:
         print(e)
         return send_file(AVATAR_SAVE_FOLDER + "/default.png")
+
 
 @app.route("/unban")
 def unban():

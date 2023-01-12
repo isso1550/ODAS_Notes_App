@@ -1,26 +1,34 @@
 import jwt
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
-key = "secret"
+
+load_dotenv()
+JWT_KEY = os.getenv("JWT_KEY")
 
 def buildUserDataJWT(data):
-    encoded = jwt.encode({"exp": datetime.now(tz=timezone.utc) + timedelta(minutes=5),"payload":data}, key, algorithm="HS256")
+    encoded = jwt.encode({"exp": datetime.now(tz=timezone.utc) + timedelta(minutes=5),"payload":data}, JWT_KEY, algorithm="HS256")
     return encoded
 
 def decodeUserDataJWT(token):
     try:
-        data = jwt.decode(token, key, algorithms=["HS256"])
+        data = jwt.decode(token, JWT_KEY, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
+        return 1
+    except jwt.InvalidSignatureError:
         return 1
     return data
 
 def buildUnbanJWT(data):
-    encoded = jwt.encode({"exp": datetime.now(tz=timezone.utc) + timedelta(hours=24),"payload":data}, key, algorithm="HS256")
+    encoded = jwt.encode({"exp": datetime.now(tz=timezone.utc) + timedelta(hours=24),"payload":data}, JWT_KEY, algorithm="HS256")
     return encoded
 
 def decodeUnbanJWT(token):
     try:
-        data = jwt.decode(token, key, algorithms=["HS256"])
+        data = jwt.decode(token, JWT_KEY, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
+        return 1
+    except jwt.InvalidSignatureError:
         return 1
     return data
 

@@ -47,7 +47,7 @@ def passwordEntropy(password):
     ent = len(password) * log2(alpha_len)
     #Bardzo krótkie, bardzo proste lub oba jednocześnie
     if (30 >= ent):
-        pass_msg = "Password extremely weak, consider changing on your profile page"
+        pass_msg = "Password extremely weak"
     
     #Bardzo krótkie lub dość krótkie i brak zróżnicowania w użytych znakach
     elif (50 >= ent > 30):
