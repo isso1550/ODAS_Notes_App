@@ -7,3 +7,4 @@ pyjwt
 filetype
 requests
 pycryptodome
+python-dotenv

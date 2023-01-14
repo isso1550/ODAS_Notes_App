@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, send_file, flash
+from flask import Flask, render_template, request, redirect, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from dotenv import load_dotenv
 import os
 import re
 import base64
 import glob
-import requests
+import requests 
 import time
 import filetype
 import sqlite3
@@ -126,6 +126,8 @@ def registerUser():
         #Za to, ze nie zadzialaja odpowiadaja inne elementy kodu, tutaj tylko logowanie, aby latwiej bylo zidentyfikowac kto, co i kiedy
         if("<script>" in email or "<script>" in username):
             logger.log(request, "SUSPICIOUS", "Registration form possible script injection %s %s" % (email, username))
+        print(username)
+        print("'" in username)
         if("'" in email or "'" in username):
             logger.log(request, "SUSPICIOUS", "Registration form possible SQL injection %s %s" % (email, username))
         
@@ -141,7 +143,7 @@ def registerUser():
         #Email juz zarejestrowany -> pominac rejestracje oraz przypomniec uzytkownikowi ze juz ma konto przez email.
         #Gdy uzytkownik zobaczy ze po rejestracji dalej logowanie nie dziala powinien sprawdzic e-mail zgodnie z informacja o wyslanym potwierdzeniu
         logger.log(request, "REGISTER_FAIL", "Already registered email %s" % email)
-        content = "You already have account registered or this email!<br> <a href=" + "http://127.0.0.1:5000/resetPassword" + ">Reset password </a>" 
+        content = "You already have account registered or this email!<br> <a href=" + "/resetPassword" + ">Reset password </a>" 
         print("Sending email... %s %s" % (email, content))
         logger.log(request, "EMAIL_SENT", ("Addr:%s;Content:%s" % (email, content)))
         return "Registration successful - confirmation e-mail sent!<br>" + pass_msg
@@ -177,6 +179,9 @@ def loginUser():
             #Logowanie użytkownika - można usunąć wszystkie nieudane próby z bazy
             login_ban_handler.deleteAllAttempts(db, email)
             username = sql.execute("SELECT username from users WHERE email=:email", {"email":email}).fetchone()[0]
+            if(username == "admin"):
+                logger.log(request,"SUSPICIOUS","Honeypot - admin account login attempt!")
+                return redirect('/browse')
             user = user_loader(username)
             login_user(user)
             logger.log(request, "LOGIN", ("User %s logged in" % user.id))
@@ -194,8 +199,8 @@ def loginUser():
         #Czas zablokować użytkownika. Na e-mail otrzyma link do odblokowania konta i zmiany hasła
         logger.log(request, "USER_BAN", ("%s banned for too many login fails" % email))
         token = jwtbuilder.buildUnbanJWT((email))
-        content = "<a href=" + "http://127.0.0.1:5000/unban?token=" + token + "> Click to unban </a>"
-        content = content + "<br> <a href=" + "http://127.0.0.1:5000/resetPassword" + ">Reset your password</a>" 
+        content = "<a href=" + "/unban?token=" + token + "> Click to unban </a>"
+        content = content + "<br> <a href=" + "/resetPassword" + ">Reset your password</a>" 
         logger.log(request, "EMAIL_SENT", ("Addr:%s;Content:%s" % (email, content)))
         return ("Sending email... %s %s" % (email, content))
 
@@ -485,7 +490,7 @@ def sendResetEmail():
     logger.log(request, "PASSWORD_RESET", "User asked to reset his password %s %s" % (email, username))
     #Koduje dane do tokenu i wysyła na email
     token = jwtbuilder.buildUserDataJWT(row)
-    return ("Sending email... %s %s" % (email, "http://127.0.0.1:5000/resetPassword?token="+token))
+    return ("Sending email... %s %s" % (email, "/resetPassword?token="+token))
 
 @app.route("/updatePassword", methods = ['POST'])
 def saveNewPassword():
@@ -582,7 +587,7 @@ def unban():
         return "Unban successful"
     return "Token invalid"
 if __name__ == "__main__":
-    INIT_DB = False
+    INIT_DB = True
     INIT_USER_FILES = False
     if (INIT_DB):
         print("[*] Init database!")
@@ -591,8 +596,14 @@ if __name__ == "__main__":
         sql.execute("DROP TABLE IF EXISTS users;")
         sql.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email varchar(100), username varchar(100), password varchar(128));")
         sql.execute("DELETE FROM users;")
-        sql.execute("INSERT INTO users (id, email, username, password) VALUES (1, 'bob@bob.com', 'bob', '$5$rounds=535000$YPsByhiXdwXli43D$pa5pvxcsyGpxMD3uhy32dBrYAw5xyjbaPsT/LS98UL0');")
 
+        sql.execute("INSERT INTO users (id, email, username, password) VALUES (1, 'admin@admin.com', 'admin', '$5$rounds=535000$NDYrLrR9osO7CO1h$WEacyhQCmLWlfS/PUYuBBXf4DrVi.W5CpfQyJYtEyP0');")
+        #bob@bob.com bob
+        sql.execute("INSERT INTO users (id, email, username, password) VALUES (2, 'bob@bob.com', 'bob', '$5$rounds=535000$YPsByhiXdwXli43D$pa5pvxcsyGpxMD3uhy32dBrYAw5xyjbaPsT/LS98UL0');")
+        #carl@mail.com hello
+        sql.execute("INSERT INTO users (id, email, username, password) VALUES (3, 'carl@mail.com', 'friend', '$5$rounds=535000$p9DxuA6qiXCK7pOg$Nv8Y1QS3rypLjVO/Urj7Fj4EMAergGqrHE2IRDAZiQ6');")
+        
+        
         sql.execute("DROP TABLE IF EXISTS login_attempts;")
         sql.execute("CREATE TABLE login_attempts (ip varchar(12), email varchar(100), date datetime)")
         sql.execute("DELETE FROM login_attempts")
@@ -600,7 +611,15 @@ if __name__ == "__main__":
         sql.execute("DROP TABLE IF EXISTS notes;")
         sql.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, username varchar(100), title varchar(100), privacy varchar(10), note varchar(700), encrypt INTEGER, password varchar(128), allowed varchar(256));")
         sql.execute("DELETE FROM notes;")
+        #Zwykła prywatna notatka
         sql.execute("INSERT INTO notes (username, note, id) VALUES ('bob', 'To jest sekret!', 1);")
+        #Zwykład publiczna notatka
+        sql.execute("INSERT INTO notes (username, title, privacy, note) VALUES ('admin','Reminder','public','Remember to use strong passwords!')")
+        bytes = b'\x1f\xae\x0e4E\xc75\x9a\x8cOzFq\x87\xba\x85\xb6\xda\xfc0?\xed\xc2\xfa|bK5\xef\xd7\x80\xb1'
+        #Publiczna notatka szyfrowana hasłem: parrot
+        sql.execute("INSERT INTO notes (username, title, privacy, note, encrypt, password) VALUES ('bob', 'Cool parrot i found', 'public', :bytes , 1, '$5$rounds=535000$T8QWrg3O4J6xbbCt$BJM.jn97CjXn9XgeX2DUVJzVd6vztebkRB3DdJ9Feg/')", {"bytes":bytes})
+        #Zwykła notatka niepubliczna - dostępna tylko dla użytkownika bob(tworzący) oraz friend(email:carl@mail.com) - można wejść tylko przez link /render/4
+        sql.execute("INSERT INTO notes (username, title, privacy, note, allowed) VALUES ('bob', 'Message to my friend', 'unlisted', 'Hello friend!', 'friend')")
         db.commit()
 
     if (INIT_USER_FILES):

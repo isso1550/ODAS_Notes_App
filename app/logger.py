@@ -6,7 +6,11 @@ class Logger():
 
 
     def __init__(self) -> None:
+        INIT = True
         print("Starting logger on %s" % self.DB_FILE)
+        if (INIT):
+            print("Initializing logbase")
+            self.initialize_database()
         pass
 
     def initialize_database(self):

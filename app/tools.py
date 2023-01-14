@@ -71,4 +71,4 @@ def passwordEntropy(password):
 
 if __name__ == "__main__":
     print("###TEST MODE###")
-    print(type(HASH_DELAY))
+    print(hash_password("hello"))
