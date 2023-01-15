@@ -1,4 +1,4 @@
-# my_secure_app
+# Projekt ODAS
 link github: https://github.com/isso1550/my_secure_app<br>
 W plik README specyfikacja elementów aplikacji, wbudowane dane (do ułatwienia testów) oraz wyjaśnienia dotyczące korzystania. <br>
 Samo działanie najważniejszych elementów aplikacji starałem się opisywać komentarzami w kodzie.<br>
